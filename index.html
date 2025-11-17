@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Cash Benefit Clustered Bubbles</title>
+<style>
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #071923;
+    color: #fff;
+  }
+  svg { display: block; margin: 0 auto; }
+  .tooltip {
+    position: absolute; pointer-events: none;
+    background: rgba(0,0,0,0.8); color: #fff;
+    padding: 6px 8px; border-radius: 4px;
+    font-size: 12px; line-height: 1.4;
+  }
+  .cluster-label {
+    pointer-events: none;
+    text-transform: uppercase; letter-spacing: 3px;
+  }
+</style>
+
+<svg id="chart" width="960" height="600"></svg>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const width = 960, height = 600;
+
+const svg = d3.select("#chart")
+  .attr("viewBox", [0,0,width,height])
+  .style("background", "#071923");
+
+svg.append("text")
+  .attr("x", width/2).attr("y", 40)
+  .attr("text-anchor", "middle")
+  .attr("fill", "#fff").attr("font-size", 22)
+  .attr("letter-spacing", 4)
+  .text("CASH BENEFIT & GDP");
+
+const tooltip = d3.select("body").append("div")
+  .attr("class","tooltip").style("opacity",0);
+
+d3.csv("cash_benefit_bubbles.csv", d3.autoType).then(data => {
+  data.forEach(d => {
+    d.group = d.CashBenefit_Group;
+    d.gdp = +d.GDP;
+    d.cashBenefit = +d["Cash Benefit (%)"];
+  });
+
+  const groups = Array.from(new Set(data.map(d=>d.group))).sort();
+
+  const color = d3.scaleOrdinal()
+    .domain(groups)
+    .range(["#2ecc71","#e74c3c","#f1c40f","#3498db","#9b59b6"].slice(0,groups.length));
+
+  const radius = d3.scaleSqrt()
+    .domain(d3.extent(data,d=>d.gdp))
+    .range([4,32]);
+
+  data.forEach(d => { d.r = radius(d.gdp||0); });
+
+  const clusterRadius = Math.min(width,height)/3;
+  const centers = {};
+  groups.forEach((g,i)=>{
+    const angle = (i/groups.length)*2*Math.PI - Math.PI/2;
+    centers[g] = {
+      x: width/2 + clusterRadius*Math.cos(angle),
+      y: height/2 + clusterRadius*Math.sin(angle)
+    };
+  });
+
+  const nodes = data.map(d=>Object.assign({},d));
+
+  const node = svg.append("g")
+    .attr("stroke","#fff").attr("stroke-width",1)
+    .selectAll("circle").data(nodes).join("circle")
+      .attr("r",d=>d.r)
+      .attr("fill",d=>color(d.group))
+      .on("mousemove",(event,d)=>{
+        tooltip.style("opacity",1)
+          .html(
+            `<strong>${d.Country}</strong><br/>
+             Cash Benefit: ${d.cashBenefit}%<br/>
+             GDP per capita: ${d.gdp.toLocaleString()}<br/>
+             Group: ${d.group}`
+          )
+          .style("left",(event.pageX+12)+"px")
+          .style("top",(event.pageY+12)+"px");
+      })
+      .on("mouseleave",()=>tooltip.style("opacity",0));
+
+  const simulation = d3.forceSimulation(nodes)
+    .force("x", d3.forceX(d=>centers[d.group].x).strength(0.08))
+    .force("y", d3.forceY(d=>centers[d.group].y).strength(0.08))
+    .force("collide", d3.forceCollide(d=>d.r+1.2))
+    .force("charge", d3.forceManyBody().strength(0.5))
+    .alpha(1).alphaDecay(0.02)
+    .on("tick",()=>{
+      node
+        .attr("cx",d=>d.x=Math.max(d.r,Math.min(width-d.r,d.x)))
+        .attr("cy",d=>d.y=Math.max(d.r,Math.min(height-d.r,d.y)));
+    });
+
+  svg.append("g").selectAll("text")
+    .data(groups).join("text")
+      .attr("class","cluster-label")
+      .attr("x",g=>centers[g].x)
+      .attr("y",g=>centers[g].y)
+      .attr("text-anchor","middle")
+      .attr("dominant-baseline","middle")
+      .attr("fill","#fff")
+      .attr("font-size",18)
+      .attr("font-weight","bold")
+      .text(g=>String(g).toUpperCase());
+});
+</script>
